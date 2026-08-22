@@ -6,6 +6,8 @@
  *
  * 功能：
  *   - 注册 /todo 斜杠指令（对话输入框使用），支持 add/done/remove/clear/list
+ *   - 注册 5 个动态模型工具（harness 可自动调用）：
+ *       todo_list / todo_add / todo_update / todo_remove / todo_clear
  *   - 提供包私有 RPC（Client→Host，JSON）：list / add / toggle / remove / clear
  *   - 待办数据保存在进程内（fiber 共享），插件重启后清空
  */
@@ -24,6 +26,17 @@ return {
       if (!findItem(id)) return null
       items = items.map((x) => (x.id === id ? { ...x, done: !x.done } : x))
       return findItem(id)
+    }
+    const updateItem = (id, patch) => {
+      const cur = findItem(id)
+      if (!cur) return null
+      const next = {
+        ...cur,
+        text: typeof patch.text === 'string' && patch.text ? patch.text : cur.text,
+        done: typeof patch.done === 'boolean' ? patch.done : cur.done,
+      }
+      items = items.map((x) => (x.id === id ? next : x))
+      return next
     }
     const removeItem = (id) => {
       if (!findItem(id)) return false
@@ -83,6 +96,88 @@ return {
         },
       }))
     }
+
+    // ---------- 动态模型工具（harness 可在后续步骤中自动调用） ----------
+    const registerTool = (def) => {
+      const tool = harness.defineTool(def)
+      ctx.effect(() => harness.registerTool(ctx, tool))
+    }
+    const textRender = (_args, value) => [{ type: 'text', text: JSON.stringify(value, null, 2) }]
+
+    registerTool({
+      name: 'todo_list',
+      description: '列出待办列表的全部条目（id、内容、完成状态、创建时间）。',
+      parameters: {},
+      output: { schema: { type: 'json' }, render: textRender },
+      execute: () => ({ ok: true, items: snapshot() }),
+    })
+
+    registerTool({
+      name: 'todo_add',
+      description: '向待办列表添加一条新的待办事项。',
+      parameters: {
+        text: { type: 'string', required: true, description: '待办内容' },
+      },
+      output: { schema: { type: 'json' }, render: textRender },
+      execute: (args) => {
+        const text = typeof args.text === 'string' ? args.text.trim() : ''
+        if (!text) return { ok: false, error: '内容不能为空' }
+        const it = addItem(text)
+        return { ok: true, item: { id: it.id, text: it.text, done: it.done, createdAt: it.createdAt }, total: items.length }
+      },
+    })
+
+    registerTool({
+      name: 'todo_update',
+      description: '更改一条待办：可修改内容文本和/或完成状态。id 来自 todo_list。',
+      parameters: {
+        id: { type: 'string', required: true, description: '待办 id（如 t1）' },
+        text: { type: 'string', description: '新的待办内容；省略则不改文本' },
+        done: { type: 'boolean', description: '完成状态 true/false；省略则不改状态' },
+      },
+      output: { schema: { type: 'json' }, render: textRender },
+      execute: (args) => {
+        const id = typeof args.id === 'string' ? args.id : ''
+        const it = updateItem(id, {
+          text: typeof args.text === 'string' ? args.text.trim() : undefined,
+          done: typeof args.done === 'boolean' ? args.done : undefined,
+        })
+        if (!it) return { ok: false, error: '找不到待办 ' + id }
+        return { ok: true, item: { id: it.id, text: it.text, done: it.done, createdAt: it.createdAt } }
+      },
+    })
+
+    registerTool({
+      name: 'todo_remove',
+      description: '删除一条待办。id 来自 todo_list。',
+      parameters: {
+        id: { type: 'string', required: true, description: '待办 id（如 t1）' },
+      },
+      output: { schema: { type: 'json' }, render: textRender },
+      execute: (args) => {
+        const id = typeof args.id === 'string' ? args.id : ''
+        if (!removeItem(id)) return { ok: false, error: '找不到待办 ' + id }
+        return { ok: true, removed: id, total: items.length }
+      },
+    })
+
+    registerTool({
+      name: 'todo_clear',
+      description: '清除待办：默认只清除已完成的；only_done 为 false 时清空全部。',
+      parameters: {
+        only_done: { type: 'boolean', description: 'true=仅清除已完成（默认），false=清空全部' },
+      },
+      output: { schema: { type: 'json' }, render: textRender },
+      execute: (args) => {
+        if (args && args.only_done === false) {
+          const n = items.length
+          items = []
+          return { ok: true, removed: n, total: 0 }
+        }
+        const n = clearDone()
+        return { ok: true, removed: n, total: items.length }
+      },
+    })
 
     // ---------- 面板 RPC（Client→Host） ----------
     const handle = (method, handler) => ctx.effect(() => harness.handle(method, handler))
