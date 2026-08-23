@@ -44,6 +44,10 @@ dsh-floating-panels/
 └── LICENSE
 ```
 
+## 兼容性
+
+本仓库插件基于 **DeepSeek Harness `dsh-v0.1.1-rc.2`**（2026-08-21 发布，即官方最新版）开发，并在其运行时契约上验证通过（`fs` / `sandboxPolicy` / `commands` / `harness` / `slots` / `workspaces` / `timer` 等接口均对实际运行时的 Inspect 查询结果实现）。
+
 ## 许可
 
 [MIT](./LICENSE)
