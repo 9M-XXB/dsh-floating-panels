@@ -77,7 +77,27 @@ window.__ModuleLoader__.load({
         return open
       }
 
+      var STORE_KEY = 'dsh-todo-panel-state'
+      var readState = function () {
+        try { var raw = localStorage.getItem(STORE_KEY); if (raw) return JSON.parse(raw) } catch (e) {}
+        return null
+      }
+      var writeState = function (s) {
+        try { localStorage.setItem(STORE_KEY, JSON.stringify(s)) } catch (e) {}
+      }
+      var savedState = readState()
       var pos = { x: 660, y: 84 }
+      var size = null
+      var pinnedFlag = false
+      if (savedState) {
+        if (typeof savedState.x === 'number') pos.x = savedState.x
+        if (typeof savedState.y === 'number') pos.y = savedState.y
+        if (typeof savedState.w === 'number' && typeof savedState.h === 'number') size = { w: savedState.w, h: savedState.h }
+        if (typeof savedState.pinned === 'boolean') pinnedFlag = savedState.pinned
+      }
+      var savePanelState = function () {
+        writeState({ x: pos.x, y: pos.y, w: size ? size.w : null, h: size ? size.h : null, pinned: pinnedFlag })
+      }
 
       var fmtTime = function (ts) {
         try { return new Date(ts).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) } catch (e) { return '' }
@@ -88,9 +108,10 @@ window.__ModuleLoader__.load({
         var tickState = React.useState(0)
         var setTick = tickState[1]
         var dragRef = React.useRef(null)
-        var pinnedState = React.useState(false)
+        var panelRef = React.useRef(null)
+        var pinnedState = React.useState(pinnedFlag)
         var pinned = pinnedState[0]
-        var setPinned = pinnedState[1]
+        var setPinned = function (v) { pinnedFlag = v; pinnedState[1](v); savePanelState() }
         var itemsState = React.useState(null)
         var items = itemsState[0]
         var setItems = itemsState[1]
@@ -124,6 +145,20 @@ window.__ModuleLoader__.load({
           return timer
         }, [open, load])
 
+        // 记录面板实际尺寸（CSS resize 拖拽缩放后），供重启恢复
+        React.useEffect(function () {
+          var el = panelRef.current
+          if (!el || typeof ResizeObserver === 'undefined') return
+          var ro = new ResizeObserver(function (entries) {
+            var r = entries[0] && entries[0].contentRect
+            if (!r || r.width < 20 || r.height < 20) return
+            size = { w: Math.round(r.width), h: Math.round(r.height) }
+            savePanelState()
+          })
+          ro.observe(el)
+          return function () { ro.disconnect() }
+        }, [])
+
         var add = function () {
           var text = input.trim()
           if (!text || busy) return
@@ -151,7 +186,7 @@ window.__ModuleLoader__.load({
           pos = { x: Math.max(0, d.ox + e.clientX - d.px), y: Math.max(0, d.oy + e.clientY - d.py) }
           setTick(function (t) { return t + 1 })
         }
-        var onHeadUp = function () { dragRef.current = null }
+        var onHeadUp = function () { dragRef.current = null; savePanelState() }
 
         var total = items ? items.length : 0
         var doneCount = items ? items.filter(function (i) { return i.done }).length : 0
@@ -177,7 +212,8 @@ window.__ModuleLoader__.load({
 
         return React.createElement('div', {
           className: 'dsh-todo-float',
-          style: { left: pos.x, top: pos.y, resize: pinned ? 'none' : 'both', display: open ? undefined : 'none' },
+          ref: panelRef,
+          style: { left: pos.x, top: pos.y, width: size ? size.w : undefined, height: size ? size.h : undefined, resize: pinned ? 'none' : 'both', display: open ? undefined : 'none' },
         },
           React.createElement('div', {
             className: 'dsh-todo-float-head',

@@ -69,7 +69,27 @@ window.__ModuleLoader__.load({
         return open
       }
 
+      var STORE_KEY = 'dsh-file-explorer-panel-state'
+      var readState = function () {
+        try { var raw = localStorage.getItem(STORE_KEY); if (raw) return JSON.parse(raw) } catch (e) {}
+        return null
+      }
+      var writeState = function (s) {
+        try { localStorage.setItem(STORE_KEY, JSON.stringify(s)) } catch (e) {}
+      }
+      var savedState = readState()
       var pos = { x: 300, y: 84 }
+      var size = null
+      var pinnedFlag = false
+      if (savedState) {
+        if (typeof savedState.x === 'number') pos.x = savedState.x
+        if (typeof savedState.y === 'number') pos.y = savedState.y
+        if (typeof savedState.w === 'number' && typeof savedState.h === 'number') size = { w: savedState.w, h: savedState.h }
+        if (typeof savedState.pinned === 'boolean') pinnedFlag = savedState.pinned
+      }
+      var savePanelState = function () {
+        writeState({ x: pos.x, y: pos.y, w: size ? size.w : null, h: size ? size.h : null, pinned: pinnedFlag })
+      }
       var MAX_PREVIEW = 65536
 
       var fmtSize = function (n) {
@@ -99,9 +119,10 @@ window.__ModuleLoader__.load({
         var tickState = React.useState(0)
         var setTick = tickState[1]
         var dragRef = React.useRef(null)
-        var pinnedState = React.useState(false)
+        var panelRef = React.useRef(null)
+        var pinnedState = React.useState(pinnedFlag)
         var pinned = pinnedState[0]
-        var setPinned = pinnedState[1]
+        var setPinned = function (v) { pinnedFlag = v; pinnedState[1](v); savePanelState() }
         var rootState = React.useState(null)
         var root = rootState[0]
         var setRoot = rootState[1]
@@ -204,6 +225,20 @@ window.__ModuleLoader__.load({
           return timer
         }, [open, root, expanded])
 
+        // 记录面板实际尺寸（CSS resize 拖拽缩放后），供重启恢复
+        React.useEffect(function () {
+          var el = panelRef.current
+          if (!el || typeof ResizeObserver === 'undefined') return
+          var ro = new ResizeObserver(function (entries) {
+            var r = entries[0] && entries[0].contentRect
+            if (!r || r.width < 20 || r.height < 20) return
+            size = { w: Math.round(r.width), h: Math.round(r.height) }
+            savePanelState()
+          })
+          ro.observe(el)
+          return function () { ro.disconnect() }
+        }, [])
+
         var toggleDir = function (path) {
           var willOpen = !expanded[path]
           var ne = {}
@@ -279,7 +314,7 @@ window.__ModuleLoader__.load({
           pos = { x: Math.max(0, d.ox + e.clientX - d.px), y: Math.max(0, d.oy + e.clientY - d.py) }
           setTick(function (t) { return t + 1 })
         }
-        var onHeadUp = function () { dragRef.current = null }
+        var onHeadUp = function () { dragRef.current = null; savePanelState() }
 
         var followActive = !manualRoot
 
@@ -360,7 +395,8 @@ window.__ModuleLoader__.load({
 
         return React.createElement('div', {
           className: 'dsh-fex-float',
-          style: { left: pos.x, top: pos.y, resize: pinned ? 'none' : 'both', display: open ? undefined : 'none' },
+          ref: panelRef,
+          style: { left: pos.x, top: pos.y, width: size ? size.w : undefined, height: size ? size.h : undefined, resize: pinned ? 'none' : 'both', display: open ? undefined : 'none' },
         },
           React.createElement('div', {
             className: 'dsh-fex-float-head',
