@@ -1,0 +1,4 @@
+# dsh-todo-list bundle 补丁层：把待办插件插入 profile 的组合树。
+- insert:
+    - id: dsh-todo-list
+      name: 'dsh-todo-list'

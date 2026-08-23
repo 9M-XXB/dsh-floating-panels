@@ -1,0 +1,4 @@
+# dsh-file-explorer bundle 补丁层：把文件浏览器插件插入 profile 的组合树。
+- insert:
+    - id: dsh-file-explorer
+      name: 'dsh-file-explorer'

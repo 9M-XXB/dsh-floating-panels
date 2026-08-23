@@ -26,21 +26,36 @@
 3. 用 `cordis_run` 激活，在界面批准后即可使用。
 
 > **注意**：动态插件是进程内（process-local）的，DSH 重启后需要重新创建。
-> 如需随 DSH 长期安装，可将其打包为 profile 插件（`dsh plugin` / cordis patch 层），参见 DSH 官方文档。
+> 如需**自动启动**（重启后无需重建），请使用 `packages/` 下的 profile 插件版，见下文「自动启动（profile 插件版）」。
+
+## 自动启动（profile 插件版）
+
+`packages/dsh-file-explorer` 与 `packages/dsh-todo-list` 是可直接安装进 DSH profile 的完整插件包（host 半部为真实 Cordis 插件，client 半部为手写 `__ModuleLoader__` bundle，无需构建工具）：
+
+1. 安装（以 profile `web` 为例，需要 `pnpm` 可用；`dsh plugin` 会写 profile 的 package.json + bundles 并链接 node_modules）：
+   ```sh
+   dsh plugin --profile web add <repo>/packages/dsh-todo-list
+   dsh plugin --profile web add <repo>/packages/dsh-file-explorer
+   ```
+2. 若主机环境无法从仓库目录解析 `@deepseek-ai/*`（link: 依赖的真实路径在仓库内），为 `packages/dsh-todo-list/node_modules` 建一个指向 profile 共享 node_modules 的符号链接：
+   ```sh
+   ln -sfn ~/.dsh/profiles/node_modules packages/dsh-todo-list/node_modules
+   ```
+   （该链接是机器特定的，已加入 `.gitignore`。）
+3. **重启 dsh** 生效。两个包通过各自的 `cordis.patch.yml`（`dsh.bundle.patch`）自动插入组合树，随 profile 一起启动；无需任何手动重建。
+
+待办数据存储在 `~/.dsh-todo-store.json`（首次启动自动创建；位于用户主目录，绝不在仓库内，不会被上传到 GitHub）。
 
 ## 目录结构
 
 ```
 dsh-floating-panels/
-├── plugins/
-│   ├── file-explorer/
-│   │   ├── host.js       # Host 半部（RPC：root/list/read）
-│   │   ├── client.js     # Client 半部（浮动面板 UI）
-│   │   └── README.md
-│   └── todo-list/
-│       ├── host.js       # Host 半部（/todo 指令 + RPC：list/add/toggle/remove/clear）
-│       ├── client.js     # Client 半部（浮动面板 UI）
-│       └── README.md
+├── plugins/                   # 动态插件源码（cordis_define 直接使用）
+│   ├── file-explorer/         #   host.js / client.js / README.md
+│   └── todo-list/             #   host.js / client.js / README.md
+├── packages/                  # profile 插件包（自动启动）
+│   ├── dsh-file-explorer/     #   lib/index.js + lib/client.js + cordis.patch.yml
+│   └── dsh-todo-list/         #   lib/index.js + lib/client.js + cordis.patch.yml
 └── LICENSE
 ```
 
